@@ -40,6 +40,7 @@
  */
 
 import {
+	ANTHROPIC_COMPATIBLE,
 	AUTH_KEYS,
 	AUTH_PROVIDER_KEYS,
 	AUTH_PROVIDER_ENV_VARS,
@@ -55,6 +56,7 @@ import {
 import { authStore } from "../store/auth.ts";
 import { isSubscriptionProvider, subscriptionConnected } from "../agent/subscription-connections.ts";
 import { customProviderAvailable, installCustomProviderSource } from "./custom-provider.ts";
+import { anthropicCompatibleAvailable, installAnthropicCompatibleSource } from "./anthropic-compatible.ts";
 import { claudeCodeAvailable } from "./claude-code-config.ts";
 import { CLAUDE_CODE_PROVIDER } from "../agent/claude-code/constants.ts";
 import { CUSTOM_AUTH_BINDING } from "../core/custom-provider-auth.ts";
@@ -66,7 +68,7 @@ import { authEnvRecord as boot } from "../core/auth-env.ts";
 /** Ordinary writable key names. Custom auth writes must use the atomic
  * endpoint-binding seam, never the generic single-key API. */
 export function isWritableAuthKey(id: string): boolean {
-	return id !== CUSTOM_AUTH_BINDING && id !== CUSTOM_PROVIDER.envVar && (isKnownAuthKey(id) || isProviderEnvVar(id));
+	return id !== CUSTOM_AUTH_BINDING && id !== CUSTOM_PROVIDER.envVar && (isKnownAuthKey(id) || isProviderEnvVar(id) || id === ANTHROPIC_COMPATIBLE.envVar);
 }
 
 /** The settings page's provider dropdown: every pi-ai provider that takes
@@ -101,6 +103,7 @@ export function initAuthEnv(): void {
 		// semantics, exactly like the curated vars.
 		...AUTH_PROVIDER_KEYS.map((p) => p.envVar),
 		CUSTOM_PROVIDER.envVar,
+		ANTHROPIC_COMPATIBLE.envVar,
 	]);
 	if (envKeysIgnored()) {
 		// THE FRESH-USER SWITCH: delete every managed env var (re-run on
@@ -174,7 +177,7 @@ export function resolveKeyStatuses(
 
 /** The GET view: every curated key (present or not) + unknown file vars. */
 export function keyStatuses(): AuthKeyStatus[] {
-	return resolveKeyStatuses(authStore.authVars(), process.env, boot().realEnv, new Set([...AUTH_PROVIDER_ENV_VARS, CUSTOM_PROVIDER.envVar]));
+	return resolveKeyStatuses(authStore.authVars(), process.env, boot().realEnv, new Set([...AUTH_PROVIDER_ENV_VARS, CUSTOM_PROVIDER.envVar, ANTHROPIC_COMPATIBLE.envVar]));
 }
 
 /** The live value for one var, env-first (the env-wins rule) — the canonical
@@ -198,6 +201,7 @@ export function keyValue(id: string): string | undefined {
  * no key at all: nothing to gate, present by definition. */
 export function providerKeyPresent(provider: string): boolean {
 	if (provider === CUSTOM_PROVIDER.id) return customProviderAvailable();
+	if (provider === ANTHROPIC_COMPATIBLE.id) return anthropicCompatibleAvailable();
 	// Explicit opt-in + installation only, never authentication readiness.
 	// Consulted at admission, not inside already-running agent loops.
 	if (provider === CLAUDE_CODE_PROVIDER) return claudeCodeAvailable();
@@ -214,7 +218,7 @@ export function providerKeyPresent(provider: string): boolean {
  */
 export function saveKey(id: string, value: string): { ok: true; status: AuthKeyStatus } | { ok: false; error: string } {
 	if (id === CUSTOM_PROVIDER.envVar || id === CUSTOM_AUTH_BINDING) return { ok: false, error: "Use the custom endpoint editor" };
-	const shape = isProviderEnvVar(id) ? genericProviderKeyGuard(id, value) : validateKeyShape(id, value);
+	const shape = isProviderEnvVar(id) || id === ANTHROPIC_COMPATIBLE.envVar ? genericProviderKeyGuard(id, value) : validateKeyShape(id, value);
 	if (!shape.ok) return { ok: false, error: shape.error };
 	const trimmed = value.trim();
 	authStore.setAuthVar(id, trimmed);
@@ -247,3 +251,4 @@ export function deleteKey(id: string): AuthKeyStatus {
 // imported by every route/handler path that touches keys).
 initAuthEnv();
 installCustomProviderSource();
+installAnthropicCompatibleSource();

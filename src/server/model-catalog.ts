@@ -21,6 +21,7 @@ import { clampThinkingLevel, getSupportedThinkingLevels, type Api, type Model } 
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { piModels } from "../agent/models.ts";
 import { customProviderAvailable } from "./custom-provider.ts";
+import { anthropicCompatibleAvailable, anthropicCompatibleSettings } from "./anthropic-compatible.ts";
 import { chatGPTConnected, chatGPTModel, chatGPTModels, refreshChatGPTModels } from "../agent/chatgpt-bridge.ts";
 import { NATIVE_SUBSCRIPTIONS } from "../core/contracts/subscriptions.ts";
 import { nativeSubscriptionId, nativeSubscriptionConnected, nativeSubscriptionModel, nativeSubscriptionModels, refreshSubscriptionModels } from "../agent/subscription-bridge.ts";
@@ -49,7 +50,7 @@ import type {
 	SlotPins,
 } from "../core/contracts/models.ts";
 import type { EffectiveModelSpec, EffectiveSlot } from "../core/settings-resolution.ts";
-import { AUTH_PROVIDER_KEYS, CUSTOM_PROVIDER } from "../core/auth-keys.ts";
+import { ANTHROPIC_COMPATIBLE, AUTH_PROVIDER_KEYS, CUSTOM_PROVIDER } from "../core/auth-keys.ts";
 import { claudeCodeAvailable } from "./claude-code-config.ts";
 import { CLAUDE_CODE_PROVIDER } from "../agent/claude-code/constants.ts";
 import {
@@ -160,6 +161,11 @@ export function catalogProviders(): CatalogProvider[] {
 		// reflects usability, not key presence (keyless local servers are allowed).
 		...(customProviderUsable(effectiveSettings().customProvider)
 			? [{ id: CUSTOM_PROVIDER.id, envVar: CUSTOM_PROVIDER.envVar, keyPresent: customProviderAvailable() }]
+			: []),
+		// The Anthropic-compatible endpoint: a row only when connected; keyPresent
+		// needs both the registered provider and its key.
+		...(anthropicCompatibleSettings()
+			? [{ id: ANTHROPIC_COMPATIBLE.id, envVar: ANTHROPIC_COMPATIBLE.envVar, keyPresent: anthropicCompatibleAvailable() }]
 			: []),
 	]).sort((a, b) => a.id.localeCompare(b.id));
 }

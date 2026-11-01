@@ -275,6 +275,15 @@ export interface CustomProviderSettings {
 	manualModels?: string[];
 }
 
+/** The Anthropic-compatible endpoint's stored config (non-secret). `models`
+ *  is the connect-time snapshot: pi's Anthropic catalog ids that the
+ *  endpoint's /v1/models also lists. */
+export interface AnthropicCompatibleSettings {
+	/** Normalized base URL without /v1 (the SDK appends /v1/messages). */
+	baseUrl?: string;
+	models?: string[];
+}
+
 export function parseModelIds(raw: unknown): string[] {
 	const items = typeof raw === "string" ? raw.split(/[\s,]+/) : Array.isArray(raw) ? raw : [];
 	const ids = items.filter((v): v is string => typeof v === "string").map((v) => v.trim()).filter(Boolean);
@@ -474,6 +483,8 @@ export interface UserSettings {
 	models?: ModelsSettings;
 	/** The custom OpenAI-compatible endpoint (non-secret config only). */
 	customProvider?: CustomProviderSettings;
+	/** The Anthropic-compatible endpoint (non-secret config only). */
+	anthropicCompatible?: AnthropicCompatibleSettings;
 	appearance?: AppearanceSettings;
 	graph?: GraphSettings;
 	compaction?: CompactionSettings;
@@ -679,6 +690,18 @@ function sanitizeCustomProvider(raw: Record<string, unknown>): CustomProviderSet
 	return out;
 }
 
+/** The anthropicCompatible section: invalid base URL dropped, ids parsed. */
+function sanitizeAnthropicCompatible(raw: Record<string, unknown>): AnthropicCompatibleSettings {
+	const out: AnthropicCompatibleSettings = {};
+	if (typeof raw.baseUrl === "string") {
+		const base = normalizeBaseUrl(raw.baseUrl);
+		if (base) out.baseUrl = base;
+	}
+	const models = parseModelIds(raw.models);
+	if (models.length) out.models = models;
+	return out;
+}
+
 function sanitizeBooleanMap(raw: unknown): Record<string, boolean> | undefined {
 	if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return undefined;
 	const out: Record<string, boolean> = {};
@@ -831,6 +854,9 @@ export function sanitizeUserSettings(raw: unknown): UserSettings | null {
 	}
 	if (r.customProvider !== null && typeof r.customProvider === "object" && !Array.isArray(r.customProvider)) {
 		out.customProvider = sanitizeCustomProvider(r.customProvider as Record<string, unknown>);
+	}
+	if (r.anthropicCompatible !== null && typeof r.anthropicCompatible === "object" && !Array.isArray(r.anthropicCompatible)) {
+		out.anthropicCompatible = sanitizeAnthropicCompatible(r.anthropicCompatible as Record<string, unknown>);
 	}
 	if (r.graph !== null && typeof r.graph === "object" && !Array.isArray(r.graph)) {
 		out.graph = sanitizeGraph(r.graph as Record<string, unknown>);

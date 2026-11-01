@@ -152,3 +152,31 @@ for how context measurements and unpriced usage are displayed.
   establish delivery, not real-model image-understanding quality.
 - [Editor tests](../tests/custom-provider-ui.test.tsx) and
   [connect snapshot/pin tests](../tests/custom-provider-route.test.ts).
+
+## Anthropic-compatible endpoint
+
+A second, separate route for gateways that serve the native Anthropic Messages API (for example
+LiteLLM's `/v1/messages`). It runs next to direct Anthropic and next to the custom endpoint.
+
+- **Add:** Settings → Providers → **+ Add a provider** → *Anthropic-compatible endpoint*. Enter the
+  base URL **without** `/v1` (the client appends `/v1/messages`).
+- **Key:** `LITELLM_KEY`. A real environment variable wins. Otherwise the key that you type is saved in
+  `auth.json` under that name. The packaged macOS app does not receive shell variables, so type the key
+  once in the editor.
+- **Connect verifies before it saves:** `GET /v1/models` (with `x-api-key`), keep the ids that are also
+  in pi's built-in Anthropic catalog, keep only the newest version of each family (opus, sonnet, haiku,
+  fable, …; an undated alias wins over a dated snapshot), then send one 1-token `/v1/messages` request
+  to the cheapest of them. If a step fails, nothing is saved. Connect again to pick up new models.
+- **Gateway compat:** two catalog flags that depend on `anthropic-beta` headers are off for this
+  provider: `supportsMidConvoEffort` and `supportsMidConvoToolChanges`. LiteLLM drops unknown betas,
+  so Vertex rejects the request (`messages.1.output_config: Extra inputs are not permitted`). With the
+  flags off, effort is sent at the top level and the full tool list on each request.
+- **Models:** provider id `anthropic-compatible`. Each model keeps the catalog's context size, thinking
+  levels, and prices, so costs show Anthropic list-price estimates. Your gateway can bill differently.
+  Ids that are not in pi's catalog (for example `anthropic/…` aliases) are not offered.
+- **Key and URL go together:** the key and the base URL are resolved together for each request. A
+  key therefore goes only to the URL that is configured at that time.
+- **Disconnect** removes the configuration and the saved key. A key from the environment stays.
+
+Code: [provider](../src/server/anthropic-compatible.ts), [route](../src/server/anthropic-compatible-http.ts),
+[tests](../tests/anthropic-compatible.test.ts).

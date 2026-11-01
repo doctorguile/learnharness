@@ -36,7 +36,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 export function installCustomProviderSource(readAuth = customAuthState): void {
 	let fingerprint: string | undefined;
 	configureProviderSource({
-		isCustom: (id) => id === CUSTOM_PROVIDER.id,
+		owns: (id) => id === CUSTOM_PROVIDER.id,
 		sync(models) {
 			const cp = readSettings()?.customProvider;
 			// Validate the durable nonce/URL/mode before resolving ANY credential.

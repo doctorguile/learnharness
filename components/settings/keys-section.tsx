@@ -25,6 +25,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
+	ANTHROPIC_COMPATIBLE,
 	AUTH_KEYS,
 	CUSTOM_MODEL_DEFAULT_CONTEXT_WINDOW,
 	CUSTOM_MODEL_DEFAULT_MAX_TOKENS,
@@ -76,6 +77,29 @@ async function readCustomStatus(inspectKey = false): Promise<CustomStatus> {
 	return { keyReuseRequired: Boolean(cp.keyReuseRequired), revision: response.headers.get("etag") ?? "", authMode: cp.authMode ?? "keyless", keySource: cp.keySource ?? "none", baseUrl: cp.baseUrl ?? "", models: cp.models ?? [], overrides: cp.overrides ?? {}, manualModels: cp.manualModels ?? [], keyPresent: Boolean(cp.keyPresent) };
 }
 
+/** The Anthropic-compatible endpoint's status (GET /api/anthropic-compatible). */
+interface AnthropicCompatibleStatus {
+	baseUrl: string;
+	models: string[];
+	keyPresent: boolean;
+	keySource: "env" | "file" | "none";
+}
+
+async function readAnthropicCompatibleStatus(): Promise<AnthropicCompatibleStatus> {
+	const response = await fetch("/api/anthropic-compatible");
+	if (!response.ok) throw new Error("Unable to load endpoint configuration.");
+	const s = await response.json() as Partial<AnthropicCompatibleStatus>;
+	return { baseUrl: s.baseUrl ?? "", models: s.models ?? [], keyPresent: Boolean(s.keyPresent), keySource: s.keySource ?? "none" };
+}
+
+/** The Anthropic-compatible endpoint's synthetic Add-provider entry
+ *  (offered only while unconfigured). */
+export const ANTHROPIC_COMPATIBLE_INFO: ProviderKeyInfo = {
+	id: ANTHROPIC_COMPATIBLE.id,
+	envVar: ANTHROPIC_COMPATIBLE.envVar,
+	label: ANTHROPIC_COMPATIBLE.label,
+};
+
 /** The curated tools group, pinned by id (the catalog owns the copy;
  *  these ids are the contract). Derived from the catalog (search wave,
  *  2026-09-20: the Google CSE pair retired, Tavily + Brave joined) — the
@@ -125,6 +149,8 @@ export function classifyKeys(
 		// section), so it never shows here — not as a provider row, not as an
 		// "other stored variable".
 		if (s.id === CUSTOM_PROVIDER.envVar) continue;
+		// Same for the Anthropic-compatible endpoint's key (its own row).
+		if (s.id === ANTHROPIC_COMPATIBLE.envVar) continue;
 		if (providerEnv.has(s.id) || (!s.info && providers === undefined)) providerRows.push(s);
 		else if (!s.info) unknownRows.push(s);
 		// (pre-interlude catalogs: a curated-but-unclassified status still
@@ -387,13 +413,16 @@ export function KeysSection({
 	/** The custom endpoint's status + whether its connect editor is open. */
 	const [custom, setCustom] = useState<CustomStatus | null>(null);
 	const [addingCustom, setAddingCustom] = useState(false);
+	/** The Anthropic-compatible endpoint's status + whether its editor is open. */
+	const [anthropic, setAnthropic] = useState<AnthropicCompatibleStatus | null>(null);
+	const [editingAnthropic, setEditingAnthropic] = useState(false);
 
 	// Escape folds any open editor (unfolded row or the Add-provider paste)
 	// WITHOUT closing the dialog. Claimed at document CAPTURE phase — the
 	// only stopPropagation that outruns both the input's React handler and
 	// the dialog's window-level listener.
 	useEffect(() => {
-		if (openRow === null && adding === null && !addingCustom) return;
+		if (openRow === null && adding === null && !addingCustom && !editingAnthropic) return;
 		const onKeyDown = (e: KeyboardEvent) => {
 			if (e.key !== "Escape") return;
 			// A language dropdown above this editor in the dismissal stack owns
@@ -404,10 +433,11 @@ export function KeysSection({
 			setOpenRow(null);
 			setAdding(null);
 			setAddingCustom(false);
+			setEditingAnthropic(false);
 		};
 		document.addEventListener("keydown", onKeyDown, true);
 		return () => document.removeEventListener("keydown", onKeyDown, true);
-	}, [openRow, adding, addingCustom]);
+	}, [openRow, adding, addingCustom, editingAnthropic]);
 
 	const reload = async () => {
 		try {
@@ -425,6 +455,11 @@ export function KeysSection({
 			setCustom(await readCustomStatus());
 		} catch {
 			/* custom status unavailable — leave it unset */
+		}
+		try {
+			setAnthropic(await readAnthropicCompatibleStatus());
+		} catch {
+			/* endpoint status unavailable — leave it unset */
 		}
 	};
 
@@ -542,18 +577,35 @@ export function KeysSection({
 						onCancel={() => setAddingCustom(false)}
 					/>
 				)}
+				{anthropic?.baseUrl && (
+					<AnthropicCompatibleRow
+						status={anthropic}
+						expanded={editingAnthropic}
+						onToggle={() => setEditingAnthropic((v) => !v)}
+					/>
+				)}
+				{editingAnthropic && (
+					<AnthropicCompatibleEditor
+						status={anthropic ?? { baseUrl: "", models: [], keyPresent: false, keySource: "none" }}
+						onSaved={async () => {
+							setEditingAnthropic(false);
+							await reload();
+							notifySettingsSaved("keys");
+						}}
+						onCancel={() => setEditingAnthropic(false)}
+					/>
+				)}
 				{providers !== undefined && (
 					<AddProviderRow
-						addable={custom?.baseUrl ? addable : [...addable, CUSTOM_PROVIDER_INFO]}
+						addable={[...addable, ...(custom?.baseUrl ? [] : [CUSTOM_PROVIDER_INFO]), ...(anthropic?.baseUrl ? [] : [ANTHROPIC_COMPATIBLE_INFO])]}
 						onPick={(p) => {
 							setAddError(null);
-							if (p.id === CUSTOM_PROVIDER.id) {
-								setAdding(null);
-								setAddingCustom(true);
-							} else {
-								setAddingCustom(false);
-								setAdding(p);
-							}
+							setAdding(null);
+							setAddingCustom(false);
+							setEditingAnthropic(false);
+							if (p.id === CUSTOM_PROVIDER.id) setAddingCustom(true);
+							else if (p.id === ANTHROPIC_COMPATIBLE.id) setEditingAnthropic(true);
+							else setAdding(p);
 						}}
 					/>
 				)}
@@ -682,6 +734,120 @@ export function CustomEndpointSetup({ onSaved }: { onSaved: () => void | Promise
 	useEffect(() => { void reload(); }, []);
 	if (!status || error) return <div className="text-xs">{error ? "Unable to load custom configuration." : "Loading custom configuration…"}{error && <button onClick={() => void reload()}>Retry</button>}</div>;
 	return <CustomEndpointEditor key={status.revision} setup revision0={status.revision} authMode0={status.authMode} keySource0={status.keySource} keyReuseRequired0={status.keyReuseRequired} baseUrl0={status.baseUrl} keyPresent={status.keyPresent} models={status.models} overrides={status.overrides} manualModels0={status.manualModels} onSaved={onSaved} onPinsSaved={reload} onReload={reload} onCancel={reload} />;
+}
+
+/** The Anthropic-compatible endpoint's status row (shown once connected). */
+function AnthropicCompatibleRow({ status, expanded, onToggle }: { status: AnthropicCompatibleStatus; expanded: boolean; onToggle: () => void }) {
+	const count = status.models.length;
+	const key = status.keyPresent ? `${ANTHROPIC_COMPATIBLE.envVar}${status.keySource === "env" ? " · env" : ""}` : `${ANTHROPIC_COMPATIBLE.envVar} missing`;
+	return (
+		<div data-testid="anthropic-compatible-row">
+			<button
+				type="button"
+				data-testid="anthropic-compatible-row-btn"
+				aria-expanded={expanded}
+				onClick={onToggle}
+				className="flex w-full items-center justify-between gap-3 rounded-sm px-1 py-1.5 text-left cursor-pointer transition-colors hover:bg-accent/50"
+			>
+				<span className="font-ui text-xs text-foreground">{ANTHROPIC_COMPATIBLE.label}</span>
+				<span data-testid="anthropic-compatible-status" className="max-w-[60%] truncate font-mono text-[11px] text-muted-foreground">
+					{`${status.baseUrl} · ${count} model${count === 1 ? "" : "s"} · ${key}`}
+				</span>
+			</button>
+		</div>
+	);
+}
+
+/** Connect/disconnect editor. Connect verifies before it saves: /v1/models,
+ *  the built-in catalog intersection, then one 1-token /v1/messages call. */
+function AnthropicCompatibleEditor({ status, onSaved, onCancel }: { status: AnthropicCompatibleStatus; onSaved: () => Promise<void>; onCancel: () => void }) {
+	const [baseUrl, setBaseUrl] = useState(status.baseUrl);
+	const [key, setKey] = useState("");
+	const [busy, setBusy] = useState(false);
+	const [error, setError] = useState<string | null>(null);
+	const envOwned = status.keySource === "env";
+	const canConnect = Boolean(normalizeBaseUrl(baseUrl)) && (status.keyPresent || Boolean(key.trim()));
+	const envVar = ANTHROPIC_COMPATIBLE.envVar;
+
+	async function send(method: "POST" | "DELETE", body: object) {
+		if (busy) return;
+		setBusy(true);
+		setError(null);
+		const res = await fetch("/api/anthropic-compatible", { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).catch(() => null);
+		if (!res || !res.ok) {
+			const b = (await res?.json().catch(() => ({}))) as { error?: string } | undefined;
+			setError(res ? (b?.error ?? `Request failed (${res.status})`) : "Request failed. Check your connection.");
+			setBusy(false);
+			return;
+		}
+		await onSaved();
+		setBusy(false);
+	}
+
+	return (
+		<div data-testid="anthropic-compatible-editor" className="flex flex-col gap-2 rounded-sm px-1 py-1.5">
+			<div className="flex items-center gap-2">
+				<span className="shrink-0 font-ui text-xs text-foreground">{ANTHROPIC_COMPATIBLE.label}</span>
+				<input
+					type="text"
+					value={baseUrl}
+					onChange={(e) => setBaseUrl(e.target.value)}
+					placeholder="Base URL without /v1, e.g. https://litellm.example.com"
+					aria-label="Anthropic-compatible endpoint base URL"
+					data-testid="anthropic-compatible-baseurl-input"
+					disabled={busy}
+					autoFocus
+					className="h-7 min-w-0 flex-1 rounded-sm border border-border bg-background px-1.5 font-mono text-xs text-foreground outline-none placeholder:text-muted-foreground/60 focus:border-muted-foreground/50"
+				/>
+			</div>
+			<div className="flex items-center gap-2">
+				<input
+					type="password"
+					value={key}
+					onChange={(e) => setKey(e.target.value)}
+					onKeyDown={(e) => { if (e.key === "Enter" && canConnect) void send("POST", { baseUrl, ...(key.trim() ? { key } : {}) }); }}
+					placeholder={envOwned ? `${envVar} from the environment` : status.keyPresent ? `Leave blank to keep the saved ${envVar}` : `API key (saved as ${envVar})`}
+					aria-label="Anthropic-compatible endpoint API key"
+					data-testid="anthropic-compatible-key-input"
+					disabled={busy || envOwned}
+					className="h-7 min-w-0 flex-1 rounded-sm border border-border bg-background px-1.5 font-mono text-xs text-foreground outline-none placeholder:text-muted-foreground/60 focus:border-muted-foreground/50"
+				/>
+				<button
+					type="button"
+					onClick={() => void send("POST", { baseUrl, ...(key.trim() ? { key } : {}) })}
+					disabled={busy || !canConnect}
+					data-testid="anthropic-compatible-save"
+					className="shrink-0 text-xs text-foreground underline-offset-2 hover:underline disabled:text-muted-foreground/40 disabled:no-underline"
+				>
+					{busy ? "Connecting…" : "Connect"}
+				</button>
+				<button
+					type="button"
+					onClick={onCancel}
+					disabled={busy}
+					data-testid="anthropic-compatible-cancel"
+					className="shrink-0 text-xs text-muted-foreground/70 underline-offset-2 hover:text-foreground hover:underline"
+				>
+					Cancel
+				</button>
+				{status.baseUrl && (
+					<button
+						type="button"
+						onClick={() => void send("DELETE", {})}
+						disabled={busy}
+						data-testid="anthropic-compatible-delete"
+						className="shrink-0 text-xs text-muted-foreground/70 underline-offset-2 hover:text-red-500 hover:underline"
+					>
+						Disconnect
+					</button>
+				)}
+			</div>
+			<p className="text-[11px] text-muted-foreground" data-testid="anthropic-compatible-help">
+				Native Anthropic Messages API. Connect lists /v1/models, keeps the built-in Anthropic models it finds, and sends one 1-token test request. Costs are Anthropic list-price estimates.
+			</p>
+			{error && <p role="alert" data-testid="anthropic-compatible-error" className="text-xs text-red-500">{error}</p>}
+		</div>
+	);
 }
 
 /** The custom endpoint's status row (shown once configured); clicking re-opens the editor. */

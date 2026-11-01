@@ -56,20 +56,26 @@ export type { ThinkingLevel };
 let collection: ReturnType<typeof createModels> | undefined;
 interface ProviderSource {
 	sync(models: MutableModels): void;
-	isCustom(id: string): boolean;
+	/** Does this source own (register/retire) the provider id? */
+	owns(id: string): boolean;
 }
-let providerSource: ProviderSource | undefined;
+/** The custom endpoint's source name. Only its routes get custom-endpoint
+ *  engine semantics (image permit + per-operation revalidation). */
+const CUSTOM_SOURCE = "custom";
+const providerSources = new Map<string, ProviderSource>();
 
-/** Configuration IO is injected by the server; the agent never imports stores. */
-export function configureProviderSource(source: ProviderSource): void {
+/** Configuration IO is injected by the server; the agent never imports stores.
+ *  One source per name; re-configuring a name replaces that source only. */
+export function configureProviderSource(source: ProviderSource, name = CUSTOM_SOURCE): void {
 	// Server module re-evaluation can replace the source while this collection
 	// survives. Retire only the previous source's routes, not built-ins.
-	if (collection && providerSource) {
+	const previous = providerSources.get(name);
+	if (collection && previous) {
 		for (const provider of collection.getProviders()) {
-			if (providerSource.isCustom(provider.id)) collection.deleteProvider(provider.id);
+			if (previous.owns(provider.id)) collection.deleteProvider(provider.id);
 		}
 	}
-	providerSource = source;
+	providerSources.set(name, source);
 }
 
 /** The process-wide pi-ai Models collection — EVERY builtin provider's
@@ -93,7 +99,7 @@ export function piModels() {
 		}
 		collection.setProvider(createClaudeCodeProvider(streamClaudeCode));
 	}
-	providerSource?.sync(collection);
+	for (const source of providerSources.values()) source.sync(collection);
 	return collection;
 }
 
@@ -133,7 +139,7 @@ export function piEngineForSpec(spec: ResolvedModelSpec, background: boolean | (
 	const models: Models = piModels();
 	const nativeId = nativeSubscriptionId(spec.provider);
 	const registeredModel = spec.provider === "chatgpt" ? chatGPTModel(spec.id) : nativeId ? nativeSubscriptionModel(spec.provider, spec.id) : models.getModel(spec.provider, spec.id);
-	const custom = providerSource?.isCustom(spec.provider) ?? false;
+	const custom = providerSources.get(CUSTOM_SOURCE)?.owns(spec.provider) ?? false;
 	// Custom endpoint owners authorize image attempts independently of sparse
 	// discovery metadata. Never promote the registered/catalog capabilities.
 	const permitImages = (value: Model<Api>): Model<Api> => ({ ...value, input: ["text", "image"] });

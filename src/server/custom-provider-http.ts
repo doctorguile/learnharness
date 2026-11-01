@@ -47,7 +47,9 @@ export function customProviderGet(request: Request): Response {
 	});
 }
 
-function authorized(request: Request): boolean {
+/** Same-origin (web) or desktop-secret (desktop) mutation gate. Shared with
+ * the Anthropic-compatible endpoint route. */
+export function trustedMutationRequest(request: Request): boolean {
 	const desktop = process.env.LH_DESKTOP_SERVER === "1" || Boolean(process.env.LH_DESKTOP_API_SECRET);
 	if (desktop) return desktopAPIAuthorized(request.headers);
 	const origin = request.headers.get("origin");
@@ -82,7 +84,7 @@ function commit(cp: CustomProviderSettings | undefined, binding?: CustomAuthBind
 }
 
 export async function customProviderMutation(request: Request): Promise<Response> {
-	if (!authorized(request)) return failure("Custom configuration requires a trusted same-origin request.", 403);
+	if (!trustedMutationRequest(request)) return failure("Custom configuration requires a trusted same-origin request.", 403);
 	if (request.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() !== "application/json") return failure("JSON content-type is required.", 415);
 	try {
 		// Next can represent an empty DELETE as a zero-byte stream rather

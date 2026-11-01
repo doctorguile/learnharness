@@ -158,7 +158,7 @@ test("slot source passes native values unchanged; freshness and in-flight snapsh
 			return faux.streamSimple(m, c, options);
 		};
 		const provider = createProvider({ id, models: [entry], auth: { apiKey: { name: "fixture", resolve: async () => ({ auth: {} }) } }, api: { stream, streamSimple: stream } });
-		if (custom) configureProviderSource({ isCustom: (value) => value === id, sync: (models) => { models.setProvider(provider); } });
+		if (custom) configureProviderSource({ owns: (value) => value === id, sync: (models) => { models.setProvider(provider); } });
 		else piModels().setProvider(provider);
 		let retention: CacheRetention | undefined;
 		const engine = piEngineForSpec({ provider: id, id: entry.id }, true, undefined, () => retention);

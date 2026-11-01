@@ -135,6 +135,19 @@ export const CUSTOM_PROVIDER = {
 	label: "Custom endpoint",
 } as const;
 
+/**
+ * The Anthropic-compatible endpoint: pi-ai's built-in Anthropic catalog served
+ * from a user-configured base URL over the native Messages API (for example a
+ * LiteLLM proxy). NOT part of AUTH_PROVIDER_KEYS (test-pinned to pi-ai's
+ * built-ins). Its key rides LITELLM_KEY: env wins, else the file copy that the
+ * endpoint editor saves (the ordinary keys seam).
+ */
+export const ANTHROPIC_COMPATIBLE = {
+	id: "anthropic-compatible",
+	envVar: "LITELLM_KEY",
+	label: "Anthropic-compatible endpoint",
+} as const;
+
 /** Every distinct env var a model-provider key rides in (the write side's
  *  writability check — see isProviderEnvVar below; also drives which
  *  PRESENT provider vars surface as status rows). */
