@@ -31,7 +31,7 @@ import { runPiTurn } from "./pi/ui-stream.ts";
 import { collectToolCallIds } from "./pi/call-ids.ts";
 import { providerEventNote } from "../agent/provider-events.ts";
 import { effectiveSettings, stores } from "./stores.ts";
-import { searchAvailable, searchProvider } from "./search.ts";
+import { searchAvailable, searchProvider, webFallbacks } from "./search.ts";
 import { providerKeyPresent } from "./keys.ts";
 import { CLAUDE_CODE_PROVIDER } from "../core/contracts/claude-code.ts";
 import {
@@ -110,9 +110,13 @@ const jobRunner = createJobRunner({
 		providerKeyPresent(provider) ? null : providerKeyMissingEnvelope(provider, [tier]),
 	// Search port wave (2026-09-20): the researcher's web_search runs on the
 	// injected port — resolved FRESH per job (key rotations land immediately).
-	// null = honestly unavailable; the dispatch-level drop (below) uses the
-	// same signal so keyless servers never see the research tool at all.
+	// null = no keyed engine. Research dispatch does NOT depend on it
+	// (jobs.ts): keyless servers still research via the fallbacks below.
 	searchProvider,
+	// Keyless fallback wave (2026-11): Exa / DuckDuckGo search and Exa /
+	// Jina page readers when the keyed engine or direct fetch fails.
+	// LH_WEB_FALLBACK=off turns the keyless engines off.
+	webFallbacks,
 });
 /** The app's ONE extraction pipeline instance — both front doors share it:
  *  quiz-triggered session runs (turn-service) and notes imports

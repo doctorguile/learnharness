@@ -33,13 +33,20 @@ export interface SearchHit {
 /** The engine ids this wave ships (the catalog: curated keys + adapters). */
 export type SearchEngineId = "tavily" | "brave";
 
+/** Keyless fallback engines (src/agent/tools/web-keyless.ts): tried by the
+ *  web_search tool when the keyed engine is absent, fails or finds nothing.
+ *  Not user-selectable — never stored in settings. */
+export type KeylessSearchEngineId = "exa" | "duckduckgo" | "surf";
+
 /** A live search engine: an id (for status/labels) + one operation. The
  *  adapters own their wire protocol (fetch, timeouts, error mapping) —
  *  callers see only this. `search` throws on failure (adapters map HTTP
- *  errors to clear Error messages); the tool layer catches and reports. */
+ *  errors to clear Error messages); the tool layer catches and reports.
+ *  `signal` (optional) lets the tool layer stop a slow engine so the next
+ *  fallback still fits in the tool's time budget. */
 export interface SearchProvider {
-	id: SearchEngineId;
-	search(query: string, count: number): Promise<SearchHit[]>;
+	id: SearchEngineId | KeylessSearchEngineId;
+	search(query: string, count: number, signal?: AbortSignal): Promise<SearchHit[]>;
 }
 
 /** Why search is (un)available — the honest status the UI and the tool

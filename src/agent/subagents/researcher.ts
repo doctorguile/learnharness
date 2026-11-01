@@ -1,6 +1,6 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { Usage } from "@earendil-works/pi-ai";
-import { createWebTools } from "../tools/web.ts";
+import { createWebTools, type WebFallbacks } from "../tools/web.ts";
 import { createPdfReadTools } from "../tools/pdf-read.ts";
 import type { SearchProvider } from "../../core/search.ts";
 import type { PiEngine } from "../models.ts";
@@ -74,6 +74,10 @@ export interface ResearcherRunOptions {
 	 *  reports that in its output — no crash, no silent fallback). Absent
 	 *  seam reads as unavailable; web_fetch remains usable without it. */
 	search?: () => SearchProvider | null;
+	/** Keyless routes after the keyed engine / direct fetch (fallback wave,
+	 *  2026-11 — server/search.ts webFallbacks). Absent = the pre-wave
+	 *  default (no search fallback, Jina Reader rescue on fetch). */
+	webFallbacks?: WebFallbacks;
 	/** The researcher's PDF dir (PDF wave, 2026-10-07): when present, the
 	 *  toolset gains web_fetch_pdf + pdf_info/pdf_extract/pdf_search scoped
 	 *  to this per-job temp dir — PDFs from the web, read page-level. The
@@ -92,7 +96,7 @@ export interface ResearcherRunOptions {
  * the loop scripted.
  */
 export async function runResearcherAgent(prompt: string, opts: ResearcherRunOptions = {}): Promise<string> {
-	const tools = Object.values(createWebTools(opts.search ?? (() => null)));
+	const tools = Object.values(createWebTools(opts.search ?? (() => null), opts.webFallbacks));
 	if (opts.pdfDir) tools.push(...Object.values(createPdfReadTools(opts.pdfDir)));
 	const { text } = await runSubagent(tools, {
 		role: "researcher",

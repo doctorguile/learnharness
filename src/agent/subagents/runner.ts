@@ -1,5 +1,6 @@
 import type { PiEngine } from "../models.ts";
 import type { SearchProvider } from "../../core/search.ts";
+import type { WebFallbacks } from "../tools/web.ts";
 import {
 	accumulateJobUsage,
 	buildSubagentSteer,
@@ -86,6 +87,9 @@ export interface JobRunnerDeps {
 	 *  reports it as recoverable text). Absent seam (tests) reads the same;
 	 *  research dispatch and web_fetch do not require search credentials. */
 	searchProvider?: () => SearchProvider | null;
+	/** Keyless web routes (fallback wave, 2026-11): server/search.ts
+	 *  webFallbacks, read fresh per job. Absent (tests) = web.ts default. */
+	webFallbacks?: () => WebFallbacks;
 	/** Key-presence gate (provider-key interlude, 2026-09-25): given the
 	 *  resolved engine's provider + the kind's slot tier, return the
 	 *  refusal envelope when the provider's key is missing (null = run).
@@ -373,6 +377,7 @@ export function createJobRunner(deps: JobRunnerDeps): JobRunner {
 			const brief = await runResearcherAgent(prompt, {
 				engine: model,
 				search: deps.searchProvider,
+				webFallbacks: deps.webFallbacks?.(),
 				pdfDir,
 				abortSignal: loop.abortSignal,
 				chatId: loop.chatId,

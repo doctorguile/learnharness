@@ -20,6 +20,14 @@
  */
 
 import type { SearchEngineId, SearchHit, SearchProvider, SearchStatus } from "../core/search.ts";
+import {
+	duckDuckGoProvider,
+	exaReader,
+	exaSearchProvider,
+	jinaReader,
+} from "../agent/tools/web-keyless.ts";
+import type { WebFallbacks } from "../agent/tools/web.ts";
+import { resolveSurfBinary, surfProcessRunner, surfReader, surfSearchProvider } from "../agent/tools/web-surf.ts";
 import { keyValue } from "./keys.ts";
 import { effectiveSettings } from "./stores.ts";
 
@@ -35,7 +43,7 @@ type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
 export function tavilyProvider(apiKey: string, fetchFn: FetchLike = fetch): SearchProvider {
 	return {
 		id: "tavily",
-		async search(query: string, count: number): Promise<SearchHit[]> {
+		async search(query: string, count: number, signal?: AbortSignal): Promise<SearchHit[]> {
 			const resp = await fetchFn("https://api.tavily.com/search", {
 				method: "POST",
 				headers: {
@@ -43,7 +51,7 @@ export function tavilyProvider(apiKey: string, fetchFn: FetchLike = fetch): Sear
 					authorization: `Bearer ${apiKey}`,
 				},
 				body: JSON.stringify({ query, max_results: Math.min(count, 20) }),
-				signal: AbortSignal.timeout(30_000),
+				signal: signal ?? AbortSignal.timeout(30_000),
 			});
 			if (!resp.ok) {
 				const body = await resp.text();
@@ -79,7 +87,7 @@ export function tavilyProvider(apiKey: string, fetchFn: FetchLike = fetch): Sear
 export function braveProvider(apiKey: string, fetchFn: FetchLike = fetch): SearchProvider {
 	return {
 		id: "brave",
-		async search(query: string, count: number): Promise<SearchHit[]> {
+		async search(query: string, count: number, signal?: AbortSignal): Promise<SearchHit[]> {
 			const url = new URL("https://api.search.brave.com/res/v1/web/search");
 			url.searchParams.set("q", query);
 			url.searchParams.set("count", String(Math.min(count, 20)));
@@ -88,7 +96,7 @@ export function braveProvider(apiKey: string, fetchFn: FetchLike = fetch): Searc
 					accept: "application/json",
 					"x-subscription-token": apiKey,
 				},
-				signal: AbortSignal.timeout(30_000),
+				signal: signal ?? AbortSignal.timeout(30_000),
 			});
 			if (!resp.ok) {
 				const body = await resp.text();
@@ -186,4 +194,37 @@ export function searchProvider(): SearchProvider | null {
 	});
 	if (!resolved.available || !resolved.key) return null;
 	return resolved.engine === "tavily" ? tavilyProvider(resolved.key) : braveProvider(resolved.key);
+}
+
+/** Keyless web fallbacks (2026-11, port of pi-web-access + Surf): ON by
+ *  default. Read fresh per job, like the search provider.
+ *
+ *  Toggles:
+ *   - LH_WEB_FALLBACK=off — no Exa / DuckDuckGo (third-party services);
+ *     the legacy Jina Reader rescue on web_fetch stays.
+ *   - LH_SURF=off — no Surf. Surf joins only when its binary resolves
+ *     (LH_SURF_BIN, PATH, common install folders — web-surf.ts).
+ *
+ *  Order, decided 2026-11:
+ *   - search: Exa MCP (fast, keyless) → DuckDuckGo HTML (often answers bots
+ *     with a 202 check page) → Surf (DuckDuckGo in the owner's Chrome; slow
+ *     but passes bot checks).
+ *   - readers: Exa (clean markdown, fast) → Jina Reader (blocked on some
+ *     networks — seen on the owner's Mac) → Surf (real browser render; the
+ *     widest coverage, the slowest, opens a Chrome window — so LAST). */
+export function webFallbacks(env: Record<string, string | undefined> = process.env): WebFallbacks {
+	const surfBin = resolveSurfBinary(env);
+	const surf = surfBin ? surfProcessRunner(surfBin) : null;
+	const thirdParty = env.LH_WEB_FALLBACK?.toLowerCase() !== "off";
+	return {
+		search: () => [
+			...(thirdParty ? [exaSearchProvider(), duckDuckGoProvider()] : []),
+			...(surf ? [surfSearchProvider(surf)] : []),
+		],
+		readers: () => [
+			...(thirdParty ? [exaReader()] : []),
+			jinaReader(),
+			...(surf ? [surfReader(surf)] : []),
+		],
+	};
 }

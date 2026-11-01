@@ -31,7 +31,9 @@ Secrets and machine-specific paths may be supplied through the process environme
 | Configuration | Purpose |
 |---|---|
 | Provider-specific API key variables | Optional; needed only for the selected API provider. The supported UI key names are defined in `src/core/auth-keys.ts`. |
-| `TAVILY_API_KEY` / `BRAVE_API_KEY` | Optional search adapters. Research remains available without a search key and can fetch known URLs. |
+| `TAVILY_API_KEY` / `BRAVE_API_KEY` | Optional search adapters. Research remains available without a search key: keyless fallbacks (Exa MCP, then DuckDuckGo) answer searches, and blocked or JS-rendered pages fall back to Exa, then Jina Reader. |
+| `LH_WEB_FALLBACK` | `off` turns off the keyless Exa/DuckDuckGo fallbacks (queries and URLs then go to no new third party; the legacy Jina Reader rescue on `web_fetch` stays). Default: on. See `src/agent/tools/web-keyless.ts`. |
+| `LH_SURF` / `LH_SURF_BIN` | Surf (npm `surf-cli`) is the last web fallback: it renders the page in your own Chrome (real JS, your cookies). It is used when the `surf` binary is found (`LH_SURF_BIN`, `PATH`, or common global-install folders). `LH_SURF=off` turns it off. See `src/agent/tools/web-surf.ts`. |
 | `DEEPGRAM_API_KEY` | Optional dictation: short-lived token minting on the server; audio streams directly from the browser to Deepgram. |
 | `CHROME_PATH` | Optional Chrome/Chromium executable fallback for demo verification. The Electron browser helper is primary; no extra Chromium is downloaded. PDFs/SVGs use native rendering. |
 | `LH_DATA_DIR` | Relocates mutable chats, jobs, graph, settings and prompt overrides; default is repo `data/`. |

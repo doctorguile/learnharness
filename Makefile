@@ -9,6 +9,7 @@ APP      := dist/mac-arm64/LearnHarness.app
 ENT      := build/entitlements.mac.plist
 ICON     := build/icon.icns
 BUNDLE   := com.learnharness.LearnHarness
+DEST     ?= /Applications/LearnHarness.app
 
 # Signing identity. `make cert` creates the self-signed one. Use SIGN_ID=- for ad-hoc.
 CERT_CN  ?= LearnHarness Local Dev
@@ -70,10 +71,25 @@ run: ## Open the built app
 	@test -d $(APP) || { echo "missing $(APP): run 'make app' first"; exit 1; }
 	open -n $(APP)
 
+# The guard matters: "tell application ... to quit" LAUNCHES an app that is not running.
 quit: ## Quit the running app (its server exits with it)
-	-osascript -e 'tell application id "$(BUNDLE)" to quit'
+	-@osascript -e 'if application id "$(BUNDLE)" is running then tell application id "$(BUNDLE)" to quit'
+
+# rm first: ditto merges into an existing bundle, which would keep stale files.
+# The server runs as a second "LearnHarness" process; wait until both are gone.
+install-app: ## Copy the built app to DEST (default /Applications); quits the app first
+	@test -d $(APP) || { echo "missing $(APP): run 'make app' first"; exit 1; }
+	@$(MAKE) --no-print-directory quit
+	@for i in $$(seq 1 40); do pgrep -xq LearnHarness || break; sleep 0.5; done; \
+		if pgrep -xq LearnHarness; then echo "LearnHarness is still running: quit it, then retry"; exit 1; fi
+	rm -rf "$(DEST)"
+	ditto $(APP) "$(DEST)"
+	codesign --verify --deep --strict "$(DEST)"
+	@echo "installed $(DEST)"
+
+deploy: app install-app ## Full local build, then install to DEST (default /Applications)
 
 clean: ## Remove build output (dist/ and the standalone server payload)
 	rm -rf dist .next/standalone
 
-.PHONY: help install web pack sign cert app verify run quit clean
+.PHONY: help install web pack sign cert app verify run quit install-app deploy clean
